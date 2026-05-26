@@ -1,21 +1,15 @@
 {
-  "name": "wow-progression-bot",
+  "name": "bot-discord-progression",
   "version": "1.0.0",
-  "description": "",
   "main": "index.js",
   "engines": {
-  "node": "20.x"
-}
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "node": ">=20.0.0 <22.0.0"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
+  "scripts": {
+    "start": "node index.js"
+  },
   "dependencies": {
-    "discord.js": "^14.26.4",
-    "dotenv": "^17.4.2",
-    "sqlite3": "^6.0.1"
+    "discord.js": "^14.0.0",
+    "sqlite3": "^5.1.6"
   }
 }
