@@ -327,3 +327,18 @@ await interaction.channel.send({ embeds: summaries });
 });
 
 client.login(process.env.TOKEN);
+
+// ===============================
+// ✅ AJOUTE ÇA TOUT EN BAS
+// ===============================
+
+const app = express();
+
+app.get("/", (req, res) => {
+  res.send("Bot is running ✅");
+});
+
+app.listen(process.env.PORT || 10000, "0.0.0.0", () => {
+  console.log("Web server running");
+});
+
