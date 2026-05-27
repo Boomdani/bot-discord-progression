@@ -241,38 +241,48 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     // ================= SETUP =================
-    if (commandName === "setup-progress") {
+   if (commandName === "setup-progress") {
 
-      const channel = interaction.channel;
-      if (!channel) {
-        return interaction.editReply("❌ Impossible de trouver le salon.");
-      }
+  const channel = interaction.channel;
+  if (!channel) {
+    return interaction.editReply("❌ Impossible de trouver le salon.");
+  }
 
-      for (const raidName of Object.keys(raids)) {
+  for (const raidName of Object.keys(raids)) {
 
-        const bosses = raids[raidName];
+    const bosses = raids[raidName];
 
-        for (const boss of bosses) {
-          await new Promise((resolve, reject) => {
-            db.run(
-              "INSERT OR IGNORE INTO progression (raid, boss, status) VALUES (?, ?, 0)",
-              [raidName, boss],
-              (err) => err ? reject(err) : resolve()
-            );
-          });
-        }
-
-        const embed = await buildEmbed(raidName);
-        const message = await channel.send({ embeds: [embed] });
-
+    // ✅ Initialiser les boss
+    for (const boss of bosses) {
+      await new Promise((resolve, reject) => {
         db.run(
-          "UPDATE progression SET messageId = ? WHERE raid = ?",
-          [message.id, raidName]
+          "INSERT OR IGNORE INTO progression (raid, boss, status) VALUES (?, ?, 0)",
+          [raidName, boss],
+          (err) => err ? reject(err) : resolve()
         );
-      }
-
-      return interaction.editReply("✅ Tous les embeds ont été créés.");
+      });
     }
+
+    const embed = await buildEmbed(raidName);
+    const message = await channel.send({ embeds: [embed] });
+
+    // ✅ Attendre que le messageId soit bien enregistré
+    await new Promise((resolve, reject) => {
+      db.run(
+        "UPDATE progression SET messageId = ? WHERE raid = ?",
+        [message.id, raidName],
+        (err) => {
+          if (err) reject(err);
+          else resolve();
+        }
+      );
+    });
+
+    console.log(`✅ Message ID enregistré pour ${raidName} : ${message.id}`);
+  }
+
+  return interaction.editReply("✅ Tous les embeds ont été créés.");
+}
 
     // ================= DOWN / UNDOWN =================
     if (commandName === "down" || commandName === "undown") {
