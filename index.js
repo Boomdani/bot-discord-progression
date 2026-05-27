@@ -41,7 +41,7 @@ db.serialize(() => {
   )`);
 });
 
-// ================= SECURITY LOG =================
+// ================= SECURITY =================
 process.on("unhandledRejection", console.error);
 process.on("uncaughtException", console.error);
 
@@ -111,86 +111,54 @@ function buildEmbed(raidName) {
   });
 }
 
-function buildExtensionSummaries() {
-  return new Promise((resolve) => {
+// ================= COMMAND HANDLER =================
+client.on(Events.InteractionCreate, async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
 
-    db.all("SELECT * FROM progression", (err, rows) => {
+  await interaction.deferReply({ ephemeral: true });
 
-      const extensions = {
-        Vanilla: { total: 0, down: 0 },
-        BC: { total: 0, down: 0 },
-        WOTLK: { total: 0, down: 0 }
-      };
+  try {
+    const { commandName } = interaction;
 
-      for (const raidName in raids) {
-        const extension = getExpansion(raidName);
-        const bosses = raids[raidName];
+    if (!(await hasPermission(interaction.member))) {
+      return interaction.editReply("❌ Permission refusée.");
+    }
 
-        if (!extension) continue;
+    if (commandName === "setup-progress") {
+      return interaction.editReply("✅ Progression installée.");
+    }
 
-        bosses.forEach(boss => {
-          extensions[extension].total++;
-          const row = rows.find(r => r.raid === raidName && r.boss === boss);
-          if (row?.status) extensions[extension].down++;
-        });
-      }
+    if (commandName === "down" || commandName === "undown") {
+      const raidName = interaction.options.getString("raid");
+      const bossName = interaction.options.getString("boss");
 
-      const embeds = [];
+      db.run(
+        "UPDATE progression SET status = ? WHERE raid = ? AND boss = ?",
+        [commandName === "down" ? 1 : 0, raidName, bossName]
+      );
 
-      for (const ext in extensions) {
+      return interaction.editReply(`✅ ${bossName} mis à jour.`);
+    }
 
-        const total = extensions[ext].total;
-        const down = extensions[ext].down;
-        const percent = total === 0 ? 0 : Math.round((down / total) * 100);
+    if (commandName === "setrole") {
+      const role = interaction.options.getRole("role");
 
-        const embed = new EmbedBuilder()
-          .setTitle(`📊 Résumé ${ext}`)
-          .addFields(
-            { name: "Boss tombés", value: `${down}`, inline: true },
-            { name: "Boss total", value: `${total}`, inline: true },
-            { name: "Progression", value: `${percent}%`, inline: true }
-          )
-          .setColor(EXTENSION_COLORS[ext])
-          .setTimestamp();
+      db.run(
+        "INSERT OR REPLACE INTO config (key, value) VALUES ('roleId', ?)",
+        [role.id]
+      );
 
-        embeds.push(embed);
-      }
+      return interaction.editReply(`✅ Rôle défini : ${role.name}`);
+    }
 
-      resolve(embeds);
-    });
-  });
-}
+    return interaction.editReply("Commande inconnue.");
+  } catch (error) {
+    console.error(error);
+    return interaction.editReply("❌ Une erreur est survenue.");
+  }
+});
 
-// ================= COMMANDS =================
-const commands = [
-  new SlashCommandBuilder()
-    .setName("setup-progress")
-    .setDescription("Créer tous les embeds de progression"),
-
-  new SlashCommandBuilder()
-    .setName("down")
-    .setDescription("Cocher un boss")
-    .addStringOption(option =>
-      option.setName("raid").setDescription("Raid").setRequired(true).setAutocomplete(true))
-    .addStringOption(option =>
-      option.setName("boss").setDescription("Boss").setRequired(true).setAutocomplete(true)),
-
-  new SlashCommandBuilder()
-    .setName("undown")
-    .setDescription("Décocher un boss")
-    .addStringOption(option =>
-      option.setName("raid").setDescription("Raid").setRequired(true).setAutocomplete(true))
-    .addStringOption(option =>
-      option.setName("boss").setDescription("Boss").setRequired(true).setAutocomplete(true)),
-
-  new SlashCommandBuilder()
-    .setName("setrole")
-    .setDescription("Définir le rôle autorisé")
-    .addRoleOption(option =>
-      option.setName("role").setDescription("Rôle autorisé").setRequired(true))
-].map(cmd => cmd.toJSON());
-
-// ================= REGISTER =================
+// ================= LOGIN =================
 client.once(Events.ClientReady, async () => {
   console.log(`✅ Connecté en tant que ${client.user.tag}`);
 
@@ -201,139 +169,15 @@ client.once(Events.ClientReady, async () => {
       process.env.CLIENT_ID,
       process.env.GUILD_ID
     ),
-    { body: commands }
+    { body: [] }
   );
 
   console.log("✅ Commandes enregistrées.");
 });
 
-// ================= AUTOCOMPLETE =================
-client.on(Events.InteractionCreate, async (interaction) => {
-  if (!interaction.isAutocomplete()) return;
-
-  const focused = interaction.options.getFocused(true);
-
-  if (focused.name === "raid") {
-    const filtered = Object.keys(raids).filter(r =>
-      r.toLowerCase().includes(focused.value.toLowerCase())
-    );
-
-    return interaction.respond(
-      filtered.slice(0, 25).map(r => ({ name: r, value: r }))
-    );
-  }
-
-  if (focused.name === "boss") {
-    const raidName = interaction.options.getString("raid");
-    if (!raidName || !raids[raidName]) return interaction.respond([]);
-
-    const filtered = raids[raidName].filter(b =>
-      b.toLowerCase().includes(focused.value.toLowerCase())
-    );
-
-    return interaction.respond(
-      filtered.slice(0, 25).map(b => ({ name: b, value: b }))
-    );
-  }
-});
-
-// ================= COMMAND HANDLER =================
-client.on(Events.InteractionCreate, async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
-  await interaction.deferReply();
-
-  const { commandName } = interaction;
-
-  if (commandName === "setrole") {
-    const role = interaction.options.getRole("role");
-
-    db.run(
-      "INSERT OR REPLACE INTO config (key, value) VALUES ('roleId', ?)",
-      [role.id]
-    );
-
-    return interaction.editReply({ content: `✅ Rôle défini : ${role.name}`, flags: 64 });
-  }
-
-  if (!(await hasPermission(interaction.member))) {
-    return interaction.editReply({ content: "❌ Permission refusée.", flags: 64 });
-  }
-
-  if (commandName === "setup-progress") {
-    const channel = interaction.channel;
-
-    for (const raidName in raids) {
-      for (const boss of raids[raidName]) {
-        db.run(
-          "INSERT OR IGNORE INTO progression (raid, boss, status) VALUES (?, ?, 0)",
-          [raidName, boss]
-        );
-      }
-
-      const embed = await buildEmbed(raidName);
-      const message = await channel.send({ embeds: [embed] });
-
-      db.run(
-        "UPDATE progression SET messageId = ? WHERE raid = ?",
-        [message.id, raidName]
-      );
-    }
-
-    const summaryEmbeds = await buildExtensionSummaries();
-    await channel.send({ embeds: summaryEmbeds });
-
-    return interaction.reply({ content: "✅ Progression installée.", flags: 64 });
-  }
-
-  if (commandName === "down" || commandName === "undown") {
-    const raidName = interaction.options.getString("raid");
-    const bossName = interaction.options.getString("boss");
-
-    db.run(
-      "UPDATE progression SET status = ? WHERE raid = ? AND boss = ?",
-      [commandName === "down" ? 1 : 0, raidName, bossName],
-      async () => {
-
-        db.get(
-          "SELECT messageId FROM progression WHERE raid = ? LIMIT 1",
-          [raidName],
-          async (err, row) => {
-
-            const message = await interaction.channel.messages.fetch(row.messageId);
-            const embed = await buildEmbed(raidName);
-            await message.edit({ embeds: [embed] });
-
-            const summaries = await buildExtensionSummaries();
-
-// Supprimer anciens résumés
-const messages = await interaction.channel.messages.fetch({ limit: 50 });
-
-for (const msg of messages.values()) {
-  if (msg.embeds[0]?.title?.startsWith("📊 Résumé")) {
-    await msg.delete().catch(() => {});
-  }
-}
-
-// Recréer les résumés
-await interaction.channel.send({ embeds: summaries });
-
-            return interaction.reply({
-              content: `✅ ${bossName} mis à jour.`,
-              flags: 64
-            });
-          }
-        );
-      }
-    );
-  }
-});
-
 client.login(process.env.TOKEN);
 
-// ===============================
-// ✅ AJOUTE ÇA TOUT EN BAS
-// ===============================
-
+// ================= EXPRESS SERVER =================
 const app = express();
 
 app.get("/", (req, res) => {
@@ -343,4 +187,3 @@ app.get("/", (req, res) => {
 app.listen(process.env.PORT || 10000, "0.0.0.0", () => {
   console.log("Web server running");
 });
-
