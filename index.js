@@ -285,43 +285,55 @@ client.on(Events.InteractionCreate, async (interaction) => {
 }
 
     // ================= DOWN / UNDOWN =================
-    if (commandName === "down" || commandName === "undown") {
+   if (commandName === "down" || commandName === "undown") {
 
-      const raidName = interaction.options.getString("raid");
-      const bossName = interaction.options.getString("boss");
+  const raidName = interaction.options.getString("raid");
+  const bossName = interaction.options.getString("boss");
 
-      if (!raidName || !bossName) {
-        return interaction.editReply("❌ Paramètres invalides.");
+  if (!raidName || !bossName) {
+    return interaction.editReply("❌ Paramètres invalides.");
+  }
+
+  const newStatus = commandName === "down" ? 1 : 0;
+
+  // ✅ Mettre à jour le boss
+  await new Promise((resolve, reject) => {
+    db.run(
+      "UPDATE progression SET status = ? WHERE raid = ? AND boss = ?",
+      [newStatus, raidName, bossName],
+      (err) => err ? reject(err) : resolve()
+    );
+  });
+
+  // ✅ Récupérer le messageId
+  db.get(
+    "SELECT messageId FROM progression WHERE raid = ? LIMIT 1",
+    [raidName],
+    async (err, row) => {
+
+      if (err || !row || !row.messageId) {
+        console.log("❌ Aucun messageId trouvé pour", raidName);
+        return interaction.editReply("❌ Embed introuvable.");
       }
 
-      const newStatus = commandName === "down" ? 1 : 0;
+      try {
+        const channel = interaction.channel;
+        const message = await channel.messages.fetch(row.messageId);
 
-      db.run(
-        "UPDATE progression SET status = ? WHERE raid = ? AND boss = ?",
-        [newStatus, raidName, bossName]
-      );
+        const updatedEmbed = await buildEmbed(raidName);
 
-      db.get(
-        "SELECT messageId FROM progression WHERE raid = ? LIMIT 1",
-        [raidName],
-        async (err, row) => {
+        await message.edit({ embeds: [updatedEmbed] });
 
-          if (!row || !row.messageId) {
-            return interaction.editReply("❌ Embed introuvable.");
-          }
-
-          const channel = interaction.channel;
-          const message = await channel.messages.fetch(row.messageId);
-          const updatedEmbed = await buildEmbed(raidName);
-
-          await message.edit({ embeds: [updatedEmbed] });
-
-          return interaction.editReply(`✅ ${bossName} mis à jour.`);
-        }
-      );
-
-      return;
+        return interaction.editReply(`✅ ${bossName} mis à jour.`);
+      } catch (error) {
+        console.error("Erreur modification embed:", error);
+        return interaction.editReply("❌ Impossible de modifier l'embed.");
+      }
     }
+  );
+
+  return;
+}
 
     // ================= SETROLE =================
     if (commandName === "setrole") {
