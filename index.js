@@ -223,7 +223,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
    if (commandName === "setup-progress") {
 
   const channel = interaction.channel;
-
   if (!channel) {
     return interaction.editReply("❌ Impossible de trouver le salon.");
   }
@@ -231,6 +230,29 @@ client.on(Events.InteractionCreate, async (interaction) => {
   for (const raidName of Object.keys(raids)) {
 
     const bosses = raids[raidName];
+
+    for (const boss of bosses) {
+      await new Promise((resolve, reject) => {
+        db.run(
+          "INSERT OR IGNORE INTO progression (raid, boss, status) VALUES (?, ?, 0)",
+          [raidName, boss],
+          (err) => err ? reject(err) : resolve()
+        );
+      });
+    }
+
+    const embed = await buildEmbed(raidName);
+    const message = await channel.send({ embeds: [embed] });
+
+    // ✅ Sauvegarder le messageId pour tous les boss du raid
+    db.run(
+      "UPDATE progression SET messageId = ? WHERE raid = ?",
+      [message.id, raidName]
+    );
+  }
+
+  return interaction.editReply("✅ Tous les embeds ont été créés.");
+}
 
     // ✅ Initialiser la DB si vide
     for (const boss of bosses) {
