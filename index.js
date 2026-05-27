@@ -82,7 +82,7 @@ function buildEmbed(raidName) {
 
         const description = bosses
           .map((boss) => {
-            const row = rows.find((r) => r.boss === boss);
+            const row = rows?.find((r) => r.boss === boss);
             const isDown = row?.status;
 
             if (isDown) done++;
@@ -101,7 +101,7 @@ function buildEmbed(raidName) {
             name: "Progression",
             value: `**${done} / ${bosses.length} boss down**`
           })
-          .setColor(EXTENSION_COLORS[extension])
+          .setColor(EXTENSION_COLORS[extension] || 0xffffff)
           .setFooter({ text: `Extension : ${extension}` })
           .setTimestamp();
 
@@ -110,6 +110,96 @@ function buildEmbed(raidName) {
     );
   });
 }
+
+// ================= COMMANDS =================
+const commands = [
+  new SlashCommandBuilder()
+    .setName("setup-progress")
+    .setDescription("Créer tous les embeds de progression"),
+
+  new SlashCommandBuilder()
+    .setName("down")
+    .setDescription("Cocher un boss")
+    .addStringOption(option =>
+      option.setName("raid")
+        .setDescription("Raid")
+        .setRequired(true)
+        .setAutocomplete(true))
+    .addStringOption(option =>
+      option.setName("boss")
+        .setDescription("Boss")
+        .setRequired(true)
+        .setAutocomplete(true)),
+
+  new SlashCommandBuilder()
+    .setName("undown")
+    .setDescription("Décocher un boss")
+    .addStringOption(option =>
+      option.setName("raid")
+        .setDescription("Raid")
+        .setRequired(true)
+        .setAutocomplete(true))
+    .addStringOption(option =>
+      option.setName("boss")
+        .setDescription("Boss")
+        .setRequired(true)
+        .setAutocomplete(true)),
+
+  new SlashCommandBuilder()
+    .setName("setrole")
+    .setDescription("Définir le rôle autorisé")
+    .addRoleOption(option =>
+      option.setName("role")
+        .setDescription("Rôle autorisé")
+        .setRequired(true))
+].map(cmd => cmd.toJSON());
+
+// ================= REGISTER =================
+client.once(Events.ClientReady, async () => {
+  console.log(`✅ Connecté en tant que ${client.user.tag}`);
+
+  const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
+
+  await rest.put(
+    Routes.applicationGuildCommands(
+      process.env.CLIENT_ID,
+      process.env.GUILD_ID
+    ),
+    { body: commands }
+  );
+
+  console.log("✅ Commandes enregistrées.");
+});
+
+// ================= AUTOCOMPLETE =================
+client.on(Events.InteractionCreate, async (interaction) => {
+  if (!interaction.isAutocomplete()) return;
+
+  const focused = interaction.options.getFocused(true);
+
+  if (focused.name === "raid") {
+    const filtered = Object.keys(raids).filter(r =>
+      r.toLowerCase().includes(focused.value.toLowerCase())
+    );
+
+    return interaction.respond(
+      filtered.slice(0, 25).map(r => ({ name: r, value: r }))
+    );
+  }
+
+  if (focused.name === "boss") {
+    const raidName = interaction.options.getString("raid");
+    if (!raidName || !raids[raidName]) return interaction.respond([]);
+
+    const filtered = raids[raidName].filter(b =>
+      b.toLowerCase().includes(focused.value.toLowerCase())
+    );
+
+    return interaction.respond(
+      filtered.slice(0, 25).map(b => ({ name: b, value: b }))
+    );
+  }
+});
 
 // ================= COMMAND HANDLER =================
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -156,23 +246,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
     console.error(error);
     return interaction.editReply("❌ Une erreur est survenue.");
   }
-});
-
-// ================= LOGIN =================
-client.once(Events.ClientReady, async () => {
-  console.log(`✅ Connecté en tant que ${client.user.tag}`);
-
-  const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
-
-  await rest.put(
-    Routes.applicationGuildCommands(
-      process.env.CLIENT_ID,
-      process.env.GUILD_ID
-    ),
-    { body: [] }
-  );
-
-  console.log("✅ Commandes enregistrées.");
 });
 
 client.login(process.env.TOKEN);
