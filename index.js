@@ -205,12 +205,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  await interaction.deferReply({ ephemeral: true });
-
   try {
+    await interaction.deferReply({ ephemeral: true });
+
     const { commandName } = interaction;
 
-    if (!(await hasPermission(interaction.member))) {
+    // ✅ Sécurité member
+    const member = interaction.member;
+    if (!member) {
+      return interaction.editReply("❌ Impossible de vérifier les permissions.");
+    }
+
+    if (!(await hasPermission(member))) {
       return interaction.editReply("❌ Permission refusée.");
     }
 
@@ -222,29 +228,57 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const raidName = interaction.options.getString("raid");
       const bossName = interaction.options.getString("boss");
 
+      if (!raidName || !bossName) {
+        return interaction.editReply("❌ Paramètres invalides.");
+      }
+
       db.run(
-        "UPDATE progression SET status = ? WHERE raid = ? AND boss = ?",
-        [commandName === "down" ? 1 : 0, raidName, bossName]
+        "INSERT OR REPLACE INTO progression (raid, boss, status) VALUES (?, ?, ?)",
+        [raidName, bossName, commandName === "down" ? 1 : 0],
+        (err) => {
+          if (err) {
+            console.error(err);
+            return interaction.editReply("❌ Erreur base de données.");
+          }
+
+          return interaction.editReply(`✅ ${bossName} mis à jour.`);
+        }
       );
 
-      return interaction.editReply(`✅ ${bossName} mis à jour.`);
+      return;
     }
 
     if (commandName === "setrole") {
       const role = interaction.options.getRole("role");
 
+      if (!role) {
+        return interaction.editReply("❌ Rôle invalide.");
+      }
+
       db.run(
         "INSERT OR REPLACE INTO config (key, value) VALUES ('roleId', ?)",
-        [role.id]
+        [role.id],
+        (err) => {
+          if (err) {
+            console.error(err);
+            return interaction.editReply("❌ Erreur base de données.");
+          }
+
+          return interaction.editReply(`✅ Rôle défini : ${role.name}`);
+        }
       );
 
-      return interaction.editReply(`✅ Rôle défini : ${role.name}`);
+      return;
     }
 
     return interaction.editReply("Commande inconnue.");
+
   } catch (error) {
-    console.error(error);
-    return interaction.editReply("❌ Une erreur est survenue.");
+    console.error("ERREUR INTERACTION :", error);
+
+    if (interaction.deferred || interaction.replied) {
+      return interaction.editReply("❌ Une erreur est survenue.");
+    }
   }
 });
 
