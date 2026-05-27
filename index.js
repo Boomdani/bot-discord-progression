@@ -205,13 +205,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
+  await interaction.deferReply({ ephemeral: true });
+
   try {
-    await interaction.deferReply({ ephemeral: true });
-
     const { commandName } = interaction;
-
-    // ✅ Sécurité member
     const member = interaction.member;
+
     if (!member) {
       return interaction.editReply("❌ Impossible de vérifier les permissions.");
     }
@@ -220,60 +219,43 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return interaction.editReply("❌ Permission refusée.");
     }
 
-   if (commandName === "setup-progress") {
+    // ================= SETUP =================
+    if (commandName === "setup-progress") {
 
-  const channel = interaction.channel;
-  if (!channel) {
-    return interaction.editReply("❌ Impossible de trouver le salon.");
-  }
+      const channel = interaction.channel;
+      if (!channel) {
+        return interaction.editReply("❌ Impossible de trouver le salon.");
+      }
 
-  for (const raidName of Object.keys(raids)) {
+      for (const raidName of Object.keys(raids)) {
 
-    const bosses = raids[raidName];
+        const bosses = raids[raidName];
 
-    for (const boss of bosses) {
-      await new Promise((resolve, reject) => {
+        for (const boss of bosses) {
+          await new Promise((resolve, reject) => {
+            db.run(
+              "INSERT OR IGNORE INTO progression (raid, boss, status) VALUES (?, ?, 0)",
+              [raidName, boss],
+              (err) => err ? reject(err) : resolve()
+            );
+          });
+        }
+
+        const embed = await buildEmbed(raidName);
+        const message = await channel.send({ embeds: [embed] });
+
         db.run(
-          "INSERT OR IGNORE INTO progression (raid, boss, status) VALUES (?, ?, 0)",
-          [raidName, boss],
-          (err) => err ? reject(err) : resolve()
+          "UPDATE progression SET messageId = ? WHERE raid = ?",
+          [message.id, raidName]
         );
-      });
+      }
+
+      return interaction.editReply("✅ Tous les embeds ont été créés.");
     }
 
-    const embed = await buildEmbed(raidName);
-    const message = await channel.send({ embeds: [embed] });
-
-    // ✅ Sauvegarder le messageId pour tous les boss du raid
-    db.run(
-      "UPDATE progression SET messageId = ? WHERE raid = ?",
-      [message.id, raidName]
-    );
-  }
-
-  return interaction.editReply("✅ Tous les embeds ont été créés.");
-}
-
-    // ✅ Initialiser la DB si vide
-    for (const boss of bosses) {
-      await new Promise((resolve, reject) => {
-        db.run(
-          "INSERT OR IGNORE INTO progression (raid, boss, status) VALUES (?, ?, 0)",
-          [raidName, boss],
-          (err) => err ? reject(err) : resolve()
-        );
-      });
-    }
-
-    const embed = await buildEmbed(raidName);
-
-    await channel.send({ embeds: [embed] });
-  }
-
-  return interaction.editReply("✅ Tous les embeds ont été créés.");
-}
-
+    // ================= DOWN / UNDOWN =================
     if (commandName === "down" || commandName === "undown") {
+
       const raidName = interaction.options.getString("raid");
       const bossName = interaction.options.getString("boss");
 
@@ -281,14 +263,27 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return interaction.editReply("❌ Paramètres invalides.");
       }
 
+      const newStatus = commandName === "down" ? 1 : 0;
+
       db.run(
-        "INSERT OR REPLACE INTO progression (raid, boss, status) VALUES (?, ?, ?)",
-        [raidName, bossName, commandName === "down" ? 1 : 0],
-        (err) => {
-          if (err) {
-            console.error(err);
-            return interaction.editReply("❌ Erreur base de données.");
+        "UPDATE progression SET status = ? WHERE raid = ? AND boss = ?",
+        [newStatus, raidName, bossName]
+      );
+
+      db.get(
+        "SELECT messageId FROM progression WHERE raid = ? LIMIT 1",
+        [raidName],
+        async (err, row) => {
+
+          if (!row || !row.messageId) {
+            return interaction.editReply("❌ Embed introuvable.");
           }
+
+          const channel = interaction.channel;
+          const message = await channel.messages.fetch(row.messageId);
+          const updatedEmbed = await buildEmbed(raidName);
+
+          await message.edit({ embeds: [updatedEmbed] });
 
           return interaction.editReply(`✅ ${bossName} mis à jour.`);
         }
@@ -297,37 +292,24 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
 
+    // ================= SETROLE =================
     if (commandName === "setrole") {
-      const role = interaction.options.getRole("role");
 
-      if (!role) {
-        return interaction.editReply("❌ Rôle invalide.");
-      }
+      const role = interaction.options.getRole("role");
 
       db.run(
         "INSERT OR REPLACE INTO config (key, value) VALUES ('roleId', ?)",
-        [role.id],
-        (err) => {
-          if (err) {
-            console.error(err);
-            return interaction.editReply("❌ Erreur base de données.");
-          }
-
-          return interaction.editReply(`✅ Rôle défini : ${role.name}`);
-        }
+        [role.id]
       );
 
-      return;
+      return interaction.editReply(`✅ Rôle défini : ${role.name}`);
     }
 
     return interaction.editReply("Commande inconnue.");
 
   } catch (error) {
     console.error("ERREUR INTERACTION :", error);
-
-    if (interaction.deferred || interaction.replied) {
-      return interaction.editReply("❌ Une erreur est survenue.");
-    }
+    return interaction.editReply("❌ Une erreur est survenue.");
   }
 });
 
