@@ -240,6 +240,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 // ================= COMMAND HANDLER =================
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
+  await interaction.deferReply();
 
   const { commandName } = interaction;
 
@@ -251,11 +252,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
       [role.id]
     );
 
-    return interaction.reply({ content: `✅ Rôle défini : ${role.name}`, flags: 64 });
+    return interaction.editReply({ content: `✅ Rôle défini : ${role.name}`, flags: 64 });
   }
 
   if (!(await hasPermission(interaction.member))) {
-    return interaction.reply({ content: "❌ Permission refusée.", flags: 64 });
+    return interaction.editReply({ content: "❌ Permission refusée.", flags: 64 });
   }
 
   if (commandName === "setup-progress") {
