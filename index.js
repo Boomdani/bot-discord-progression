@@ -175,29 +175,50 @@ client.once(Events.ClientReady, async () => {
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isAutocomplete()) return;
 
-  const focused = interaction.options.getFocused(true);
+  try {
+    const focused = interaction.options.getFocused(true);
 
-  if (focused.name === "raid") {
-    const filtered = Object.keys(raids).filter(r =>
-      r.toLowerCase().includes(focused.value.toLowerCase())
-    );
+    // ✅ Autocomplete RAID
+    if (focused.name === "raid") {
 
-    return interaction.respond(
-      filtered.slice(0, 25).map(r => ({ name: r, value: r }))
-    );
-  }
+      const filtered = Object.keys(raids)
+        .filter(r =>
+          r.toLowerCase().includes(focused.value.toLowerCase())
+        )
+        .slice(0, 25);
 
-  if (focused.name === "boss") {
-    const raidName = interaction.options.getString("raid");
-    if (!raidName || !raids[raidName]) return interaction.respond([]);
+      return await interaction.respond(
+        filtered.map(r => ({ name: r, value: r }))
+      );
+    }
 
-    const filtered = raids[raidName].filter(b =>
-      b.toLowerCase().includes(focused.value.toLowerCase())
-    );
+    // ✅ Autocomplete BOSS
+    if (focused.name === "boss") {
 
-    return interaction.respond(
-      filtered.slice(0, 25).map(b => ({ name: b, value: b }))
-    );
+      const raidName = interaction.options.getString("raid");
+
+      if (!raidName || !raids[raidName]) {
+        return await interaction.respond([]);
+      }
+
+      const filtered = raids[raidName]
+        .filter(b =>
+          b.toLowerCase().includes(focused.value.toLowerCase())
+        )
+        .slice(0, 25);
+
+      return await interaction.respond(
+        filtered.map(b => ({ name: b, value: b }))
+      );
+    }
+
+    return await interaction.respond([]);
+
+  } catch (error) {
+    console.error("AUTOCOMPLETE ERROR:", error);
+    try {
+      await interaction.respond([]);
+    } catch {}
   }
 });
 
