@@ -220,9 +220,36 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return interaction.editReply("❌ Permission refusée.");
     }
 
-    if (commandName === "setup-progress") {
-      return interaction.editReply("✅ Progression installée.");
+   if (commandName === "setup-progress") {
+
+  const channel = interaction.channel;
+
+  if (!channel) {
+    return interaction.editReply("❌ Impossible de trouver le salon.");
+  }
+
+  for (const raidName of Object.keys(raids)) {
+
+    const bosses = raids[raidName];
+
+    // ✅ Initialiser la DB si vide
+    for (const boss of bosses) {
+      await new Promise((resolve, reject) => {
+        db.run(
+          "INSERT OR IGNORE INTO progression (raid, boss, status) VALUES (?, ?, 0)",
+          [raidName, boss],
+          (err) => err ? reject(err) : resolve()
+        );
+      });
     }
+
+    const embed = await buildEmbed(raidName);
+
+    await channel.send({ embeds: [embed] });
+  }
+
+  return interaction.editReply("✅ Tous les embeds ont été créés.");
+}
 
     if (commandName === "down" || commandName === "undown") {
       const raidName = interaction.options.getString("raid");
