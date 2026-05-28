@@ -73,19 +73,40 @@ function getExpansion(raidName) {
 function buildEmbed(raidName) {
   return new Promise((resolve) => {
     db.all(
-      "SELECT * FROM progression WHERE raid = ?",
-      [raidName],
-      (err, rows) => {
+      "SELECT * FROM progression",
+      [],
+      (err, allRows) => {
 
         const bosses = raids[raidName];
-        let done = 0;
+        let doneRaid = 0;
 
+        // ✅ Résumé par extension
+        const extensionSummary = {
+          Vanilla: { done: 0, total: 0 },
+          BC: { done: 0, total: 0 },
+          WOTLK: { done: 0, total: 0 }
+        };
+
+        for (const row of allRows) {
+          const ext = getExpansion(row.raid);
+          if (!ext) continue;
+
+          extensionSummary[ext].total++;
+
+          if (Number(row.status) === 1) {
+            extensionSummary[ext].done++;
+          }
+        }
+
+        // ✅ Boss du raid actuel
         const description = bosses
           .map((boss) => {
-            const row = rows?.find((r) => r.boss === boss);
-            const isDown = row?.status;
+            const row = allRows.find(
+              (r) => r.raid === raidName && r.boss === boss
+            );
 
-            if (isDown) done++;
+            const isDown = Number(row?.status) === 1;
+            if (isDown) doneRaid++;
 
             const icon = isDown ? "🟢" : "🔴";
             return `${icon} ${boss}`;
@@ -97,10 +118,19 @@ function buildEmbed(raidName) {
         const embed = new EmbedBuilder()
           .setTitle(`🏰 ${raidName}`)
           .setDescription(description)
-          .addFields({
-            name: "Progression",
-            value: `**${done} / ${bosses.length} boss down**`
-          })
+          .addFields(
+            {
+              name: "📊 Progression du raid",
+              value: `**${doneRaid} / ${bosses.length} boss down**`
+            },
+            {
+              name: "📜 Progression par extension",
+              value:
+                `Vanilla : ${extensionSummary.Vanilla.done} / ${extensionSummary.Vanilla.total}\n` +
+                `BC : ${extensionSummary.BC.done} / ${extensionSummary.BC.total}\n` +
+                `WOTLK : ${extensionSummary.WOTLK.done} / ${extensionSummary.WOTLK.total}`
+            }
+          )
           .setColor(EXTENSION_COLORS[extension] || 0xffffff)
           .setFooter({ text: `Extension : ${extension}` })
           .setTimestamp();
