@@ -10,7 +10,7 @@ const {
   PermissionsBitField,
   Events
 } = require("discord.js");
-const sqlite3 = require("sqlite3").verbose();
+const { Pool } = require("pg");
 const raids = require("./raids");
 
 const EXTENSION_COLORS = {
@@ -23,44 +23,59 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
-const db = new sqlite3.Database("./database.sqlite");
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
 
 // ================= DATABASE INIT =================
-db.serialize(() => {
-  db.run(`CREATE TABLE IF NOT EXISTS progression (
-    raid TEXT,
-    boss TEXT,
-    status INTEGER,
-    messageId TEXT,
-    PRIMARY KEY (raid, boss)
-  )`);
+(async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS progression (
+      raid TEXT,
+      boss TEXT,
+      status INTEGER,
+      messageId TEXT,
+      PRIMARY KEY (raid, boss)
+    )
+  `);
 
-  db.run(`CREATE TABLE IF NOT EXISTS config (
-    key TEXT PRIMARY KEY,
-    value TEXT
-  )`);
-});
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS config (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    )
+  `);
+
+  console.log("✅ PostgreSQL connecté.");
+})();
 
 // ================= SECURITY =================
 process.on("unhandledRejection", console.error);
 process.on("uncaughtException", console.error);
 
 // ================= HELPERS =================
-function hasPermission(member) {
-  return new Promise((resolve) => {
-    db.get("SELECT value FROM config WHERE key = 'roleId'", (err, row) => {
-      if (!row) {
-        return resolve(
-          member.permissions.has(PermissionsBitField.Flags.Administrator)
-        );
-      }
+async function hasPermission(member) {
 
-      resolve(
-        member.roles.cache.has(row.value) ||
-        member.permissions.has(PermissionsBitField.Flags.Administrator)
-      );
-    });
-  });
+  const result = await pool.query(
+    "SELECT value FROM config WHERE key = $1",
+    ["roleId"]
+  );
+
+  const row = result.rows[0];
+
+  if (!row) {
+    return member.permissions.has(
+      PermissionsBitField.Flags.Administrator
+    );
+  }
+
+  return (
+    member.roles.cache.has(row.value) ||
+    member.permissions.has(PermissionsBitField.Flags.Administrator)
+  );
 }
 
 function getExpansion(raidName) {
@@ -70,81 +85,76 @@ function getExpansion(raidName) {
   return null;
 }
 
-function buildEmbed(raidName) {
-  return new Promise((resolve) => {
-    db.all(
-      "SELECT * FROM progression WHERE raid = ?",
-      [raidName],
-      (err, rows) => {
+async function buildEmbed(raidName) {
 
-        const bosses = raids[raidName];
-        let done = 0;
+  const result = await pool.query(
+    "SELECT * FROM progression WHERE raid = $1",
+    [raidName]
+  );
 
-        const description = bosses
-          .map((boss) => {
-            const row = rows?.find((r) => r.boss === boss);
-            const isDown = Number(row?.status) === 1;
+  const rows = result.rows;
 
-            if (isDown) done++;
+  const bosses = raids[raidName];
+  let done = 0;
 
-            const icon = isDown ? "🟢" : "🔴";
-            return `${icon} ${boss}`;
-          })
-          .join("\n");
+  const description = bosses
+    .map((boss) => {
+      const row = rows.find((r) => r.boss === boss);
+      const isDown = Number(row?.status) === 1;
 
-        const extension = getExpansion(raidName);
+      if (isDown) done++;
 
-        const embed = new EmbedBuilder()
-          .setTitle(`🏰 ${raidName}`)
-          .setDescription(description)
-          .addFields({
-            name: "📊 Progression du raid",
-            value: `**${done} / ${bosses.length} boss down**`
-          })
-          .setColor(EXTENSION_COLORS[extension] || 0xffffff)
-          .setFooter({ text: `Extension : ${extension}` })
-          .setTimestamp();
+      const icon = isDown ? "🟢" : "🔴";
+      return `${icon} ${boss}`;
+    })
+    .join("\n");
 
-        resolve(embed);
-      }
-    );
-  });
+  const extension = getExpansion(raidName);
+
+  return new EmbedBuilder()
+    .setTitle(`🏰 ${raidName}`)
+    .setDescription(description)
+    .addFields({
+      name: "📊 Progression du raid",
+      value: `**${done} / ${bosses.length} boss down**`
+    })
+    .setColor(EXTENSION_COLORS[extension] || 0xffffff)
+    .setFooter({ text: `Extension : ${extension}` })
+    .setTimestamp();
 }
 
-function buildGlobalSummary() {
-  return new Promise((resolve) => {
-    db.all("SELECT * FROM progression", [], (err, rows) => {
+async function buildGlobalSummary() {
 
-      const summary = {
-        Vanilla: { done: 0, total: 0 },
-        BC: { done: 0, total: 0 },
-        WOTLK: { done: 0, total: 0 }
-      };
+  const result = await pool.query("SELECT * FROM progression");
+  const rows = result.rows;
 
-      for (const row of rows) {
-        const ext = getExpansion(row.raid);
-        if (!ext) continue;
+  const summary = {
+    Vanilla: { done: 0, total: 0 },
+    BC: { done: 0, total: 0 },
+    WOTLK: { done: 0, total: 0 }
+  };
 
-        summary[ext].total++;
-        if (Number(row.status) === 1) {
-          summary[ext].done++;
-        }
-      }
+  for (const row of rows) {
+    const ext = getExpansion(row.raid);
+    if (!ext) continue;
 
-      const embed = new EmbedBuilder()
-        .setTitle("📜 Résumé des extensions")
-        .setDescription(
-          `Vanilla : ${summary.Vanilla.done} / ${summary.Vanilla.total}\n` +
-          `BC : ${summary.BC.done} / ${summary.BC.total}\n` +
-          `WOTLK : ${summary.WOTLK.done} / ${summary.WOTLK.total}`
-        )
-        .setColor(0xf1c40f)
-        .setTimestamp();
+    summary[ext].total++;
+    if (Number(row.status) === 1) {
+      summary[ext].done++;
+    }
+  }
 
-      resolve(embed);
-    });
-  });
+  return new EmbedBuilder()
+    .setTitle("📜 Résumé des extensions")
+    .setDescription(
+      `Vanilla : ${summary.Vanilla.done} / ${summary.Vanilla.total}\n` +
+      `BC : ${summary.BC.done} / ${summary.BC.total}\n` +
+      `WOTLK : ${summary.WOTLK.done} / ${summary.WOTLK.total}`
+    )
+    .setColor(0xf1c40f)
+    .setTimestamp();
 }
+
 
 // ================= COMMANDS =================
 const commands = [
@@ -276,39 +286,33 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     // ================= SETUP =================
-   if (commandName === "setup-progress") {
+   // ================= SETUP =================
+if (commandName === "setup-progress") {
 
   const channel = interaction.channel;
 
-  // ✅ Créer les embeds raid
   for (const raidName of Object.keys(raids)) {
 
     const bosses = raids[raidName];
 
     for (const boss of bosses) {
-      await new Promise((resolve, reject) => {
-        db.run(
-          "INSERT OR IGNORE INTO progression (raid, boss, status) VALUES (?, ?, 0)",
-          [raidName, boss],
-          (err) => err ? reject(err) : resolve()
-        );
-      });
+      await pool.query(
+        `INSERT INTO progression (raid, boss, status)
+         VALUES ($1, $2, 0)
+         ON CONFLICT (raid, boss) DO NOTHING`,
+        [raidName, boss]
+      );
     }
 
     const embed = await buildEmbed(raidName);
     const message = await channel.send({ embeds: [embed] });
 
-    // ✅ SAUVEGARDER LE MESSAGE ID
-    await new Promise((resolve, reject) => {
-      db.run(
-        "UPDATE progression SET messageId = ? WHERE raid = ?",
-        [message.id, raidName],
-        (err) => err ? reject(err) : resolve()
-      );
-    });
+    await pool.query(
+      "UPDATE progression SET messageId = $1 WHERE raid = $2",
+      [message.id, raidName]
+    );
   }
 
-  // ✅ Résumé global EN DERNIER
   const globalEmbed = await buildGlobalSummary();
   await channel.send({ embeds: [globalEmbed] });
 
@@ -328,13 +332,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
   const newStatus = commandName === "down" ? 1 : 0;
 
   // ✅ Mettre à jour le boss
-  await new Promise((resolve, reject) => {
-    db.run(
-      "UPDATE progression SET status = ? WHERE raid = ? AND boss = ?",
-      [newStatus, raidName, bossName],
-      (err) => err ? reject(err) : resolve()
-    );
-  });
+ await pool.query(
+  "UPDATE progression SET status = $1 WHERE raid = $2 AND boss = $3",
+  [newStatus, raidName, bossName]
+);
   
   // ✅ Mettre à jour le résumé global
 const globalEmbed = await buildGlobalSummary();
@@ -350,31 +351,31 @@ if (summaryMessage) {
 }
 
   // ✅ Récupérer le messageId
-  db.get(
-    "SELECT messageId FROM progression WHERE raid = ? LIMIT 1",
-    [raidName],
-    async (err, row) => {
+ const result = await pool.query(
+  "SELECT messageId FROM progression WHERE raid = $1 LIMIT 1",
+  [raidName]
+);
 
-      if (err || !row || !row.messageId) {
-        console.log("❌ Aucun messageId trouvé pour", raidName);
-        return interaction.editReply("❌ Embed introuvable.");
-      }
+const row = result.rows[0];
 
-      try {
-        const channel = interaction.channel;
-        const message = await channel.messages.fetch(row.messageId);
+if (!row || !row.messageid) {
+  console.log("❌ Aucun messageId trouvé pour", raidName);
+  return interaction.editReply("❌ Embed introuvable.");
+}
 
-        const updatedEmbed = await buildEmbed(raidName);
+try {
+  const channel = interaction.channel;
+  const message = await channel.messages.fetch(row.messageid);
 
-        await message.edit({ embeds: [updatedEmbed] });
+  const updatedEmbed = await buildEmbed(raidName);
 
-        return interaction.editReply(`✅ ${bossName} mis à jour.`);
-      } catch (error) {
-        console.error("Erreur modification embed:", error);
-        return interaction.editReply("❌ Impossible de modifier l'embed.");
-      }
-    }
-  );
+  await message.edit({ embeds: [updatedEmbed] });
+
+  return interaction.editReply(`✅ ${bossName} mis à jour.`);
+} catch (error) {
+  console.error("Erreur modification embed:", error);
+  return interaction.editReply("❌ Impossible de modifier l'embed.");
+}
 
   return;
 }
@@ -384,10 +385,13 @@ if (summaryMessage) {
 
       const role = interaction.options.getRole("role");
 
-      db.run(
-        "INSERT OR REPLACE INTO config (key, value) VALUES ('roleId', ?)",
-        [role.id]
-      );
+     await pool.query(
+  `INSERT INTO config (key, value)
+   VALUES ('roleId', $1)
+   ON CONFLICT (key)
+   DO UPDATE SET value = EXCLUDED.value`,
+  [role.id]
+);
 
       return interaction.editReply(`✅ Rôle défini : ${role.name}`);
     }
