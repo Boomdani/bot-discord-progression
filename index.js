@@ -73,40 +73,19 @@ function getExpansion(raidName) {
 function buildEmbed(raidName) {
   return new Promise((resolve) => {
     db.all(
-      "SELECT * FROM progression",
-      [],
-      (err, allRows) => {
+      "SELECT * FROM progression WHERE raid = ?",
+      [raidName],
+      (err, rows) => {
 
         const bosses = raids[raidName];
-        let doneRaid = 0;
+        let done = 0;
 
-        // ✅ Résumé par extension
-        const extensionSummary = {
-          Vanilla: { done: 0, total: 0 },
-          BC: { done: 0, total: 0 },
-          WOTLK: { done: 0, total: 0 }
-        };
-
-        for (const row of allRows) {
-          const ext = getExpansion(row.raid);
-          if (!ext) continue;
-
-          extensionSummary[ext].total++;
-
-          if (Number(row.status) === 1) {
-            extensionSummary[ext].done++;
-          }
-        }
-
-        // ✅ Boss du raid actuel
         const description = bosses
           .map((boss) => {
-            const row = allRows.find(
-              (r) => r.raid === raidName && r.boss === boss
-            );
-
+            const row = rows?.find((r) => r.boss === boss);
             const isDown = Number(row?.status) === 1;
-            if (isDown) doneRaid++;
+
+            if (isDown) done++;
 
             const icon = isDown ? "🟢" : "🔴";
             return `${icon} ${boss}`;
@@ -118,19 +97,10 @@ function buildEmbed(raidName) {
         const embed = new EmbedBuilder()
           .setTitle(`🏰 ${raidName}`)
           .setDescription(description)
-          .addFields(
-            {
-              name: "📊 Progression du raid",
-              value: `**${doneRaid} / ${bosses.length} boss down**`
-            },
-            {
-              name: "📜 Progression par extension",
-              value:
-                `Vanilla : ${extensionSummary.Vanilla.done} / ${extensionSummary.Vanilla.total}\n` +
-                `BC : ${extensionSummary.BC.done} / ${extensionSummary.BC.total}\n` +
-                `WOTLK : ${extensionSummary.WOTLK.done} / ${extensionSummary.WOTLK.total}`
-            }
-          )
+          .addFields({
+            name: "📊 Progression du raid",
+            value: `**${done} / ${bosses.length} boss down**`
+          })
           .setColor(EXTENSION_COLORS[extension] || 0xffffff)
           .setFooter({ text: `Extension : ${extension}` })
           .setTimestamp();
@@ -138,6 +108,41 @@ function buildEmbed(raidName) {
         resolve(embed);
       }
     );
+  });
+}
+
+function buildGlobalSummary() {
+  return new Promise((resolve) => {
+    db.all("SELECT * FROM progression", [], (err, rows) => {
+
+      const summary = {
+        Vanilla: { done: 0, total: 0 },
+        BC: { done: 0, total: 0 },
+        WOTLK: { done: 0, total: 0 }
+      };
+
+      for (const row of rows) {
+        const ext = getExpansion(row.raid);
+        if (!ext) continue;
+
+        summary[ext].total++;
+        if (Number(row.status) === 1) {
+          summary[ext].done++;
+        }
+      }
+
+      const embed = new EmbedBuilder()
+        .setTitle("📜 Résumé des extensions")
+        .setDescription(
+          `Vanilla : ${summary.Vanilla.done} / ${summary.Vanilla.total}\n` +
+          `BC : ${summary.BC.done} / ${summary.BC.total}\n` +
+          `WOTLK : ${summary.WOTLK.done} / ${summary.WOTLK.total}`
+        )
+        .setColor(0xf1c40f)
+        .setTimestamp();
+
+      resolve(embed);
+    });
   });
 }
 
@@ -274,15 +279,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
    if (commandName === "setup-progress") {
 
   const channel = interaction.channel;
-  if (!channel) {
-    return interaction.editReply("❌ Impossible de trouver le salon.");
-  }
 
+  // ✅ Créer les embeds raid
   for (const raidName of Object.keys(raids)) {
 
     const bosses = raids[raidName];
 
-    // ✅ Initialiser les boss
     for (const boss of bosses) {
       await new Promise((resolve, reject) => {
         db.run(
@@ -294,22 +296,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     const embed = await buildEmbed(raidName);
-    const message = await channel.send({ embeds: [embed] });
-
-    // ✅ Attendre que le messageId soit bien enregistré
-    await new Promise((resolve, reject) => {
-      db.run(
-        "UPDATE progression SET messageId = ? WHERE raid = ?",
-        [message.id, raidName],
-        (err) => {
-          if (err) reject(err);
-          else resolve();
-        }
-      );
-    });
-
-    console.log(`✅ Message ID enregistré pour ${raidName} : ${message.id}`);
+    await channel.send({ embeds: [embed] });
   }
+
+  // ✅ Résumé global posté EN DERNIER
+  const globalEmbed = await buildGlobalSummary();
+  await channel.send({ embeds: [globalEmbed] });
 
   return interaction.editReply("✅ Tous les embeds ont été créés.");
 }
@@ -334,6 +326,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
       (err) => err ? reject(err) : resolve()
     );
   });
+  
+  // ✅ Mettre à jour le résumé global
+const globalEmbed = await buildGlobalSummary();
+
+const messages = await interaction.channel.messages.fetch({ limit: 50 });
+
+const summaryMessage = messages.find(
+  m => m.embeds[0]?.title === "📜 Résumé des extensions"
+);
+
+if (summaryMessage) {
+  await summaryMessage.edit({ embeds: [globalEmbed] });
+}
 
   // ✅ Récupérer le messageId
   db.get(
