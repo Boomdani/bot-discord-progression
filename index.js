@@ -296,10 +296,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     const embed = await buildEmbed(raidName);
-    await channel.send({ embeds: [embed] });
+    const message = await channel.send({ embeds: [embed] });
+
+    // ✅ SAUVEGARDER LE MESSAGE ID
+    await new Promise((resolve, reject) => {
+      db.run(
+        "UPDATE progression SET messageId = ? WHERE raid = ?",
+        [message.id, raidName],
+        (err) => err ? reject(err) : resolve()
+      );
+    });
   }
 
-  // ✅ Résumé global posté EN DERNIER
+  // ✅ Résumé global EN DERNIER
   const globalEmbed = await buildGlobalSummary();
   await channel.send({ embeds: [globalEmbed] });
 
