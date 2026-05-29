@@ -1,0 +1,11 @@
+8uA7I03UxfthamjC
+
+psql "postgresql://postgres:8uA7I03UxfthamjC@db.wgrxjaeqbcgaqugtuxor.supabase.co:5432/postgres?sslmode=require" -f .\sm_backup_utf8.sql
+
+psql "postgresql://postgres:TON_PASSWORD@db.wgrxjaeqbcgaqugtuxor.supabase.co:5432/postgres?sslmode=require" -f .\sm_backup_utf8.sql
+
+pg_restore --no-owner --no-privileges -d "postgresql://postgres:8uA7I03UxfthamjC@db.wgrxjaeqbcgaqugtuxor.supabase.co:5432/postgres?sslmode=require" backup.dump
+
+postgresql://postgres:8uA7I03UxfthamjC@db.wgrxjaeqbcgaqugtuxor.supabase.co:5432/postgres
+
+postgresql://postgres.wgrxjaeqbcgaqugtuxor:8uA7I03UxfthamjC@db.wgrxjaeqbcgaqugtuxor.supabase.co:6543/postgres

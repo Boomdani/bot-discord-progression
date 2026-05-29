@@ -49,20 +49,6 @@ module.exports = {
     "C'Thun"
   ],
 
-  "Vanilla — Naxxramas 40": [
-    "Anub'Rekhan",
-    "Grande veuve Faerlina",
-    "Maexxna",
-    "Noth le Porte-peste",
-    "Heigan l'Impur",
-    "Horreb",
-    "Instructeur Razuvious",
-    "Gothik le Moissonneur",
-    "Les Quatre Cavaliers",
-    "Sapphiron",
-    "Kel'Thuzad"
-  ],
-
   // =====================================================
   // 🟢 BURNING CRUSADE (Pas de mode héroïque en raid)
   // =====================================================
@@ -140,7 +126,11 @@ module.exports = {
   // ---------------- Naxxramas ----------------
 
   "WOTLK — Naxxramas 10 Normal": [
-    "Anub'Rekhan",
+    "Le Recousu",
+	"Grobbulus",
+	"Gluth",
+	"Thaddius",
+	"Anub'Rekhan",
     "Grande veuve Faerlina",
     "Maexxna",
     "Noth le Porte-peste",
@@ -154,7 +144,11 @@ module.exports = {
   ],
 
   "WOTLK — Naxxramas 25 Normal": [
-    "Anub'Rekhan",
+    "Le Recousu",
+	"Grobbulus",
+	"Gluth",
+	"Thaddius",
+	"Anub'Rekhan",
     "Grande veuve Faerlina",
     "Maexxna",
     "Noth le Porte-peste",
